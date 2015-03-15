@@ -5,9 +5,10 @@
                                    subscribe
                                    dispatch
                                    dispatch-sync
-                                   register-sub]]))
+                                   register-sub]]
+            [ajax.core :as ajax]))
 
-(def default-value {:name "Tyler"})
+(def default-value {:reactive-q/queries {}})
 
 (register-handler
   :initialize-db
@@ -15,24 +16,56 @@
     default-value))
 
 (register-handler
-  :change-name
-  (fn [db [_ new-v]]
-    (assoc db :name new-v)))
+  :reactive-q/query!
+  (fn [db [_ ident q]]
+    (ajax/POST "http://localhost:3000"
+               {:format        :edn
+                :params        {:q (pr-str q)}
+                :handler       #(dispatch [:reactive-q.query!/handle-result
+                                           ident %])
+                :error-handler #(dispatch [:reactive-q.query!/handle-result
+                                           ident (str %)])})
+    db))
+
+(register-handler
+  :reactive-q.query!/handle-result
+  (fn [db [_ ident result]]
+    (assoc-in db [:reactive-q/queries ident :result] result)))
+
+(register-handler
+  :reactive-q/init!
+  (fn [db [_ ident]]
+    (assoc-in db [:reactive-q/queries ident :result] "Loading...")))
 
 (register-sub
-  :name
-  (fn [db _]
-    (reaction (:name @db))))
+  :reactive-q/result
+  (fn [db [_ ident]]
+    (reaction (get-in @db [:reactive-q/queries ident :result]))))
 
-(defn alexandria []
-  (let [name (subscribe [:name])]
+(defn reactive-q
+  [ident q interval]
+  (js/setInterval #(dispatch [:reactive-q/query! ident q]) interval)
+  (dispatch [:reactive-q/init! ident])
+  (let [result (subscribe [:reactive-q/result ident])]
     (fn []
       [:div
-       [:input {:type      "text"
-                :value     @name
-                :on-change #(dispatch [:change-name
-                                       (-> % .-target .-value)])}]
-       [:div "Hello " @name]])))
+       [:h1 (str ident)]
+       [:div (pr-str @result)]])))
+
+(defn alexandria []
+  (fn []
+    [:div
+     [reactive-q :hits
+      '{:find [(count ?req) .]
+        :where [[?req :request/uuid]]}
+      1000]
+
+     [reactive-q :hits-by-user
+      '{:find  [?user-ident (count ?hit)]
+        :where [[?hit :request/request ?req]
+                [?req :request.request/user ?user]
+                [?user :request.request.user/ident ?user-ident]]}
+      5000]]))
 
 (defn init! []
   (dispatch [:initialize-db])
