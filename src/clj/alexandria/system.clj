@@ -1,6 +1,6 @@
 (ns alexandria.system
   (:require [com.stuartsierra.component :as component]
-            [clojure.core.async :refer [close! go-loop <!]]
+            [clojure.core.async :refer [close! go-loop <! chan]]
             [modular.ring :refer [new-web-request-handler-head]]
             [modular.http-kit :refer [new-webserver]]
             [modular.bidi :refer [new-router]]
@@ -11,7 +11,21 @@
             [taoensso.sente.server-adapters.http-kit
              :refer [sente-web-server-adapter]]))
 
-(def db-uri "datomic:ddb://us-east-1/msg-production-db/scribe")
+;; -- Mutitmethods -------------------------------------------------------------
+
+(defmulti dispatch
+          "Dispatches a sente message based off of the variant token of :?data."
+          (fn [{:keys [id]}] id))
+
+;; -- Dispatch Handlers --------------------------------------------------------
+
+(defmethod dispatch :hello/world
+  [& _]
+  (println "World"))
+
+(defmethod dispatch :default
+  [& _]
+  (println "None found"))
 
 ;; -- Sente --------------------------------------------------------------------
 
@@ -21,8 +35,8 @@
     (let [{:keys [ch-recv] :as sente-config}
           (sente/make-channel-socket! sente-web-server-adapter {})]
       (go-loop []
-        (when-let [{:keys [?data]} (<! ch-recv)]
-          (println ?data)
+        (when-let [v (<! ch-recv)]
+          (dispatch v)
           (recur)))
       (merge this sente-config)))
 
@@ -33,9 +47,8 @@
 
   RouteProvider
   (routes [{:keys [ajax-post-fn ajax-get-or-ws-handshake-fn]}]
-    ["" {"/chsk" {:get     ajax-get-or-ws-handshake-fn
-                  :post    ajax-post-fn
-                  :options (fn [_] {:status 200})}}]))
+    ["" {"/chsk" {:get  ajax-get-or-ws-handshake-fn
+                  :post ajax-post-fn}}]))
 
 ;; -- System -------------------------------------------------------------------
 

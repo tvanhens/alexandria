@@ -6,6 +6,8 @@
             [clojure.tools.namespace.repl :refer [refresh]]
             [alexandria.system :as alexandria]))
 
+;; -- Reloaded ----------------------------------------------------------------
+
 (def system nil)
 
 (defn init []
@@ -25,6 +27,8 @@
   (stop)
   (refresh :after 'alexandria.dev/go))
 
+;; -- ClojureScript Tools ------------------------------------------------------
+
 (defn browser-repl []
   (piggieback/cljs-repl :repl-env (weasel/repl-env :ip "0.0.0.0" :port 9001)))
 
@@ -33,14 +37,3 @@
     (print "Starting figwheel.\n")
     (lein/-main ["figwheel"])))
 
-(comment
-  (require '[datomic.api :as d])
-
-  (d/q '{:find  [?time]
-         :where [[?hit :request/request ?req]
-                 [?hit :request/initTime ?time]
-                 [?req :request.request/user ?user]
-                 [?user :request.request.user/ident "tantonini@sfreedman.com"]]}
-       (d/db (d/connect "datomic:ddb://us-east-1/msg-production-db/scribe")))
-
-  )

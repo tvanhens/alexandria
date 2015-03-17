@@ -1,5 +1,4 @@
 (ns alexandria.server
-  (:require [alexandria.handler :refer [app]])
   (:gen-class))
 
  (defn -main [& args]
