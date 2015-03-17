@@ -6,66 +6,41 @@
                                    dispatch
                                    dispatch-sync
                                    register-sub]]
-            [ajax.core :as ajax]))
+            [ajax.core :as ajax]
+            [taoensso.sente :as sente :refer (cb-success?)]))
 
-(def default-value {:reactive-q/queries {}})
+(def default-chsk-url-fn
+  (fn [path {:as window-location :keys [protocol host pathname]} websocket?]
+    (str (if-not websocket? protocol (if (= protocol "https:") "wss:" "ws:"))
+         "//" "localhost:3000" (or path pathname))))
+
+(let [{:keys [chsk ch-recv send-fn state]}
+      (sente/make-channel-socket!
+        "/chsk"
+        {:type        :ajax
+         :chsk-url-fn default-chsk-url-fn})]
+  (def chsk chsk)
+  (def ch-chsk ch-recv)
+  (def chsk-send! send-fn)
+  (def chsk-state state))
+
+(def default-value {:name "Tyler"})
 
 (register-handler
   :initialize-db
   (fn [_ _]
+    (chsk-send! [:hello/world {:som :data}])
     default-value))
 
-(register-handler
-  :reactive-q/query!
-  (fn [db [_ ident q]]
-    (ajax/POST "http://localhost:3000"
-               {:format        :edn
-                :params        {:q (pr-str q)}
-                :handler       #(dispatch [:reactive-q.query!/handle-result
-                                           ident %])
-                :error-handler #(dispatch [:reactive-q.query!/handle-result
-                                           ident (str %)])})
-    db))
-
-(register-handler
-  :reactive-q.query!/handle-result
-  (fn [db [_ ident result]]
-    (assoc-in db [:reactive-q/queries ident :result] result)))
-
-(register-handler
-  :reactive-q/init!
-  (fn [db [_ ident]]
-    (assoc-in db [:reactive-q/queries ident :result] "Loading...")))
-
 (register-sub
-  :reactive-q/result
-  (fn [db [_ ident]]
-    (reaction (get-in @db [:reactive-q/queries ident :result]))))
-
-(defn reactive-q
-  [ident q interval]
-  (js/setInterval #(dispatch [:reactive-q/query! ident q]) interval)
-  (dispatch [:reactive-q/init! ident])
-  (let [result (subscribe [:reactive-q/result ident])]
-    (fn []
-      [:div
-       [:h1 (str ident)]
-       [:div (pr-str @result)]])))
+  :name
+  (fn [db _]
+    (reaction (get @db :name))))
 
 (defn alexandria []
-  (fn []
-    [:div
-     [reactive-q :hits
-      '{:find [(count ?req) .]
-        :where [[?req :request/uuid]]}
-      1000]
-
-     [reactive-q :hits-by-user
-      '{:find  [?user-ident (count ?hit)]
-        :where [[?hit :request/request ?req]
-                [?req :request.request/user ?user]
-                [?user :request.request.user/ident ?user-ident]]}
-      5000]]))
+  (let [name (subscribe [:name])]
+    (fn []
+      [:h1 "Hello " @name])))
 
 (defn init! []
   (dispatch [:initialize-db])

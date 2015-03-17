@@ -33,3 +33,14 @@
     (print "Starting figwheel.\n")
     (lein/-main ["figwheel"])))
 
+(comment
+  (require '[datomic.api :as d])
+
+  (d/q '{:find  [?time]
+         :where [[?hit :request/request ?req]
+                 [?hit :request/initTime ?time]
+                 [?req :request.request/user ?user]
+                 [?user :request.request.user/ident "tantonini@sfreedman.com"]]}
+       (d/db (d/connect "datomic:ddb://us-east-1/msg-production-db/scribe")))
+
+  )

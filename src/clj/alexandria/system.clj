@@ -1,56 +1,67 @@
 (ns alexandria.system
   (:require [com.stuartsierra.component :as component]
-            modular.ring
+            [clojure.core.async :refer [close! go-loop <!]]
+            [modular.ring :refer [new-web-request-handler-head]]
             [modular.http-kit :refer [new-webserver]]
-            [datomic.api :as d]
-            [clojure.edn :as edn]
+            [modular.bidi :refer [new-router]]
             [ring.middleware.defaults :refer [api-defaults wrap-defaults]]
-            [ring.middleware.edn :refer [wrap-edn-params]]
-            [ring.middleware.cors :refer [wrap-cors]]))
+            [bidi.bidi :refer [RouteProvider]]
+            [ring.middleware.cors :refer [wrap-cors]]
+            [taoensso.sente :as sente]
+            [taoensso.sente.server-adapters.http-kit
+             :refer [sente-web-server-adapter]]))
 
 (def db-uri "datomic:ddb://us-east-1/msg-production-db/scribe")
 
-(defn return-ok
-  [result]
-  {:status  200
-   :headers {"Content-Type" "application/edn"}
-   :body    result})
+;; -- Sente --------------------------------------------------------------------
 
-(defn return-error
-  [message]
-  {:status  500
-   :headers {"Content-Type" "application/edn"}
-   :body    message})
+(defrecord SenteServer []
+  component/Lifecycle
+  (start [this]
+    (let [{:keys [ch-recv] :as sente-config}
+          (sente/make-channel-socket! sente-web-server-adapter {})]
+      (go-loop []
+        (when-let [{:keys [?data]} (<! ch-recv)]
+          (println ?data)
+          (recur)))
+      (merge this sente-config)))
 
-(defn handler
-  [{{:keys [q]} :edn-params}]
-  (try
-    (let [result
-          (pr-str
-            (d/q (edn/read-string q)
-                 (d/db (d/connect db-uri))))]
-      (return-ok (pr-str result)))
-    (catch Exception e
-      (println (.printStackTrace e))
-      (return-error (.getMessage e)))))
+  (stop [{:keys [ch-recv] :as this}]
+    (when ch-recv (close! ch-recv))
+    (dissoc this :ch-recv :send-fn :ajax-post-fn :ajax-get-or-ws-handshake-fn
+            :connected-uids))
+
+  RouteProvider
+  (routes [{:keys [ajax-post-fn ajax-get-or-ws-handshake-fn]}]
+    ["" {"/chsk" {:get     ajax-get-or-ws-handshake-fn
+                  :post    ajax-post-fn
+                  :options (fn [_] {:status 200})}}]))
+
+;; -- System -------------------------------------------------------------------
 
 (defn system
   []
   (component/system-map
-    :handler
-    (-> handler
-        wrap-edn-params
-        (wrap-defaults api-defaults)
-        (wrap-cors :access-control-allow-origin [#".*"]
-                   :access-control-allow-methods [:get :put :post :delete]))
+    :middleware
+    (comp #(wrap-cors % #".*")
+          #(wrap-defaults % api-defaults))
+
+    :sente
+    (->SenteServer)
+
+    :router
+    (component/using
+      (new-router)
+      [:sente])
+
+    :router-head
+    (component/using
+      (new-web-request-handler-head)
+      {:request-handler :router
+       :middleware      :middleware})
 
     :web-server
     (component/using
       (new-webserver :port 3000)
-      [:handler])))
+      [:router-head])))
 
-(comment
-  (pr-str
-    '{:find  [(count ?e)]
-      :where [[?e :request/uuid]]})
-  )

@@ -22,10 +22,11 @@
                  [environ "1.0.0"]
                  [re-frame "0.2.0"]
                  [cljs-ajax "0.3.10"]
-                 [fogus/ring-edn "0.2.0"]
-                 [ring-cors "0.1.6"]
+                 [jumblerg/ring.middleware.cors "1.0.1"]
+                 [com.taoensso/sente "1.4.1"]
                  [juxt.modular/http-kit "0.5.3" :exclusions [http-kit]]
                  [juxt.modular/ring "0.5.2"]
+                 [juxt.modular/bidi "0.9.1"]
                  [com.stuartsierra/component "0.2.3"]
                  [prismatic/schema "0.4.0"]
                  [com.datomic/datomic-pro "0.9.5130"
